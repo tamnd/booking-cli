@@ -1,0 +1,10 @@
+title       = "booking"
+baseURL     = "https://booking-cli.tamnd.com/"
+description = "A command line for Booking.com."
+contentDir  = "content"
+outputDir   = "public"
+theme       = "tago-doks"
+syntaxHighlight = "true"
+
+[params]
+github = "https://github.com/tamnd/booking-cli"
