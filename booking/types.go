@@ -15,6 +15,7 @@ package booking
 // under a <name>_ref field and points at a list authority. Following all of them
 // closes the loop:
 //
+//	seed       --destination---> destination   seed     --property-------> property
 //	suggestion --search_ref----> search ------> property --reviews_ref----> reviews
 //	suggestion --destination---> destination    property --destination_ref-> destination (its city)
 //	suggestion --property------> property        review   --property-------> property
@@ -22,6 +23,11 @@ package booking
 //	destination --children_ref--> destinations (down the tree)
 //	destination --properties_ref-> properties
 //	destination --search_ref-----> search
+//
+// The sitemap seed is the root: it needs no prior id, so a crawl can start from
+// booking://sitemap/<kind>, fan into every destination and property, and then
+// follow the edges above to reach the rest. The other entry point is a suggestion
+// from a typed prefix.
 //
 // so a suggestion fans into a search, a place node, or a property; a search card
 // walks through to its full property; a property reaches its reviews and the city
@@ -49,6 +55,9 @@ type Property struct {
 	Price          float64  `json:"price,omitempty"`                 // nightly, only with dates
 	Total          float64  `json:"total,omitempty" table:"-"`       // stay total, only with dates
 	Currency       string   `json:"currency,omitempty"`              // ISO 4217, when price is set
+	PriceRange     string   `json:"price_range,omitempty" table:"-"` // the schema.org "$$" band, when the island carries it
+	Phone          string   `json:"phone,omitempty" table:"-"`       // telephone from the island
+	Map            string   `json:"map,omitempty" table:"-"`         // hasMap link from the island
 	Street         string   `json:"street,omitempty" table:"-"`
 	City           string   `json:"city,omitempty"`
 	Region         string   `json:"region,omitempty" table:"-"`
@@ -69,9 +78,10 @@ type Property struct {
 }
 
 // Review is one review of a property, emitted by reviews. Booking splits each
-// review into what the guest liked and what they disliked; both are kept, and
-// Text is the combined body used by cat and export. Property is the edge back to
-// the reviewed property.
+// review into what the guest liked and what they disliked; the property page's
+// JSON-LD island carries the combined body, which fills Text, while Positive and
+// Negative are filled only when a source actually splits them, so the body is
+// never mislabeled as praise. Property is the edge back to the reviewed property.
 type Review struct {
 	ID           string  `json:"id" kit:"id"`
 	Author       string  `json:"author,omitempty"`
@@ -128,6 +138,23 @@ type Suggestion struct {
 	SearchRef     string  `json:"search_ref,omitempty" table:"-" kit:"link,kind=booking/search"`       // = Text
 	Destination   string  `json:"destination,omitempty" table:"-" kit:"link,kind=booking/destination"` // a place match, "<kind>/<cc>/<slug>"
 	Property      string  `json:"property,omitempty" table:"-" kit:"link,kind=booking/property"`       // a hotel match, "<cc>/<slug>"
+}
+
+// Seed is one entry from Booking's sitemaps, emitted by sitemap. The sitemaps are
+// the reconstruction backbone: robots.txt advertises a per-kind index, each index
+// lists per-language url shards, and each shard enumerates every landing page of
+// that kind. A Seed names one such page (kind, id, url, lastmod) and carries the
+// edge into the rest of the graph: a place seed fills Destination, a hotel seed
+// fills Property. A crawl that walks the sitemaps and then follows those edges
+// reconstructs the reachable public estate from nothing, no prior knowledge of any
+// country or property required.
+type Seed struct {
+	URL         string `json:"url" kit:"id"`                                                        // the live landing-page URL, the unique key
+	Kind        string `json:"kind,omitempty"`                                                      // country, region, city, district, landmark, airport, hotel
+	ID          string `json:"id,omitempty"`                                                        // the resolved id, "<cc>/<slug>" or "<kind>/<cc>[/<slug>]"
+	Lastmod     string `json:"lastmod,omitempty"`                                                   // the sitemap's last-modified date, when present
+	Destination string `json:"destination,omitempty" table:"-" kit:"link,kind=booking/destination"` // a place seed
+	Property    string `json:"property,omitempty" table:"-" kit:"link,kind=booking/property"`       // a hotel seed
 }
 
 // Ref is the result of `booking ref id`: the canonical (kind, id) a reference

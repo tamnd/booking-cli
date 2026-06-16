@@ -39,6 +39,22 @@ booking properties city/us/orlando       # the hotels on a city landing page
 booking properties city/us/orlando -n 10 # the first ten
 ```
 
+## Start a crawl from the sitemap
+
+`sitemap` reads Booking's own published sitemaps and is the crawl root: it lists
+every landing page of a kind with no prior id, so you do not need to know a single
+country or hotel to begin. Each row is a Seed that points into the rest of the
+graph.
+
+```bash
+booking sitemap country                  # every country landing page
+booking sitemap hotel -n 50              # the first fifty hotel pages
+booking sitemap city -o jsonl | jq .destination
+```
+
+A place seed fills `destination` and a hotel seed fills `property`, so you can
+walk straight from a seed into the full record and then follow its links.
+
 ## Shape the output
 
 The same flags work on every command:
@@ -101,7 +117,9 @@ booking mcp                                         # MCP over stdio
 
 ## What to do next
 
-Follow the record graph: a suggestion fans into a search, a place, or a hotel; a
-search card walks through to the full property; a property reaches its reviews
-and the city it sits in; a destination climbs to its parent, descends to its
-children, and lists its properties. The [guides](/guides/) cover the common jobs.
+Follow the record graph: a sitemap seed fans into a destination or a property; a
+suggestion fans into a search, a place, or a hotel; a search card walks through to
+the full property; a property reaches its reviews and the city it sits in; a
+destination climbs to its parent, descends to its children, and lists its
+properties. Starting from `sitemap` and following these links reaches the whole
+public estate. The [guides](/guides/) cover the common jobs.

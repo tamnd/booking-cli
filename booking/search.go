@@ -29,25 +29,7 @@ func (c *Client) Search(ctx context.Context, dest string, limit int) ([]*Propert
 	if err != nil {
 		return nil, err
 	}
-	var out []*Property
-	seen := map[string]bool{}
-	for _, a := range anchorRE.FindAllSubmatch(body, -1) {
-		r := Classify(string(a[1]))
-		if r.Kind != "property" || seen[r.ID] {
-			continue
-		}
-		seen[r.ID] = true
-		out = append(out, &Property{
-			ID:         r.ID,
-			Name:       anchorText(a[2]),
-			URL:        URLFor("property", r.ID),
-			ReviewsRef: r.ID,
-		})
-		if limit > 0 && len(out) >= limit {
-			break
-		}
-	}
-	return out, nil
+	return limitCards(propertyCards(body), limit), nil
 }
 
 // searchURL builds the searchresults URL with the configured occupancy, currency,
