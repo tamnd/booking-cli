@@ -1,63 +1,63 @@
-// Package booking is the library behind the booking command line:
-// the HTTP client, request shaping, and the typed data models for booking.
+// Package booking is the library behind the booking command line: the HTTP
+// client, the offline reference layer, and the typed records read from public
+// Booking.com surfaces.
 //
-// The Client here is the spine every command shares. It sets a real
-// User-Agent, paces requests so a busy session stays polite, and retries the
-// transient failures (429 and 5xx) that any public site throws under load.
-// Build your endpoint calls and JSON decoding on top of it.
+// Booking.com has one web plane with two reliability tiers. The destination
+// estate (country, region, city, district, landmark, and airport landing pages)
+// is built to be crawled and reads from anywhere; the interactive client (the
+// property page, search, reviews, and autocomplete) is fronted by a bot manager
+// and is best-effort from a datacenter. The Client below GETs both, paces and
+// retries politely, caches on disk, and turns a walled response into ErrBlocked
+// before any parser sees it. There is no API key: every surface is anonymous.
 package booking
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
-	"regexp"
 	"strings"
 	"time"
 )
 
-// DefaultUserAgent identifies the client to booking. A real, honest
-// User-Agent is both polite and the thing most likely to keep you unblocked.
-const DefaultUserAgent = "booking/dev (+https://github.com/tamnd/booking-cli)"
-
 // Host is the site this client talks to, and the host the URI driver in
-// domain.go claims. The scaffold points it at www.booking.com; change it once you
-// know the real endpoints you want to read.
+// domain.go claims.
 const Host = "www.booking.com"
 
 // BaseURL is the root every request is built from.
 const BaseURL = "https://" + Host
 
-// Client talks to booking over HTTP.
+// Client reads public Booking.com data over HTTP.
 type Client struct {
-	HTTP      *http.Client
-	UserAgent string
-	// Rate is the minimum gap between requests. Zero means no pacing.
-	Rate    time.Duration
-	Retries int
-
+	HTTP *http.Client
+	cfg  Config
 	last time.Time
 }
 
-// NewClient returns a Client with sensible defaults: a 30s timeout, a 200ms
-// minimum gap between requests, and five retries on transient errors.
-func NewClient() *Client {
+// NewClient returns a Client configured from cfg.
+func NewClient(cfg Config) *Client {
+	if cfg.UserAgent == "" {
+		cfg.UserAgent = DefaultUserAgent
+	}
+	if cfg.Timeout <= 0 {
+		cfg.Timeout = 30 * time.Second
+	}
 	return &Client{
-		HTTP:      &http.Client{Timeout: 30 * time.Second},
-		UserAgent: DefaultUserAgent,
-		Rate:      200 * time.Millisecond,
-		Retries:   5,
+		HTTP: &http.Client{Timeout: cfg.Timeout},
+		cfg:  cfg,
 	}
 }
 
-// Get fetches url and returns the response body. It paces and retries according
-// to the client's settings. The caller owns nothing extra; the body is read
-// fully and closed here.
-func (c *Client) Get(ctx context.Context, rawURL string) ([]byte, error) {
+// get fetches a URL and returns the body. It serves from cache when fresh, paces
+// and retries transient failures, and classifies a walled response as ErrBlocked.
+func (c *Client) get(ctx context.Context, rawURL string) ([]byte, error) {
+	if b := c.cacheGet(rawURL); b != nil {
+		return b, nil
+	}
 	var lastErr error
-	for attempt := 0; attempt <= c.Retries; attempt++ {
+	for attempt := 0; attempt <= c.cfg.Retries; attempt++ {
 		if attempt > 0 {
 			select {
 			case <-ctx.Done():
@@ -67,12 +67,16 @@ func (c *Client) Get(ctx context.Context, rawURL string) ([]byte, error) {
 		}
 		body, retry, err := c.do(ctx, rawURL)
 		if err == nil {
+			c.cachePut(rawURL, body)
 			return body, nil
 		}
 		lastErr = err
 		if !retry {
 			return nil, err
 		}
+	}
+	if errors.Is(lastErr, ErrRateLimited) {
+		return nil, ErrRateLimited
 	}
 	return nil, fmt.Errorf("get %s: %w", rawURL, lastErr)
 }
@@ -83,18 +87,30 @@ func (c *Client) do(ctx context.Context, rawURL string) (body []byte, retry bool
 	if err != nil {
 		return nil, false, err
 	}
-	req.Header.Set("User-Agent", c.UserAgent)
+	req.Header.Set("User-Agent", c.cfg.UserAgent)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/json")
+	if c.cfg.Locale != "" {
+		req.Header.Set("Accept-Language", c.cfg.Locale)
+	}
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
+		// A reset or handshake failure mid-request is treated as retryable here;
+		// the get loop turns a persistent failure into the wrapped error.
 		return nil, true, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+	switch {
+	case resp.StatusCode == http.StatusForbidden:
+		return nil, false, ErrBlocked
+	case resp.StatusCode == http.StatusNotFound:
+		return nil, false, ErrNotFound
+	case resp.StatusCode == http.StatusTooManyRequests:
+		return nil, true, ErrRateLimited
+	case resp.StatusCode >= 500:
 		return nil, true, fmt.Errorf("http %d", resp.StatusCode)
-	}
-	if resp.StatusCode != http.StatusOK {
+	case resp.StatusCode != http.StatusOK:
 		return nil, false, fmt.Errorf("http %d", resp.StatusCode)
 	}
 
@@ -102,15 +118,18 @@ func (c *Client) do(ctx context.Context, rawURL string) (body []byte, retry bool
 	if err != nil {
 		return nil, true, err
 	}
+	if isChallenge(b) {
+		return nil, false, ErrBlocked
+	}
 	return b, false, nil
 }
 
-// pace blocks until at least Rate has passed since the previous request.
+// pace blocks until at least Delay has passed since the previous request.
 func (c *Client) pace() {
-	if c.Rate <= 0 {
+	if c.cfg.Delay <= 0 {
 		return
 	}
-	if wait := c.Rate - time.Since(c.last); wait > 0 {
+	if wait := c.cfg.Delay - time.Since(c.last); wait > 0 {
 		time.Sleep(wait)
 	}
 	c.last = time.Now()
@@ -124,110 +143,35 @@ func backoff(attempt int) time.Duration {
 	return d
 }
 
-// Page is the scaffold's one example record: a single page, addressed by the
-// path that names it on www.booking.com. It is a stand-in for the typed records you
-// will model from the real booking endpoints.
-//
-// The kit struct tags make it addressable as a resource URI (see domain.go): ID
-// is the URI id, and Body is the long text `booking cat` and the Markdown
-// export print. The table tags shape the terminal grid (`-o table`) without
-// touching the JSON: URL is flagged the canonical column the `url` format prints,
-// and Body is hidden from the grid with `table:"-"` because a long preview wrecks
-// a row, though it still rides in `-o json` and `booking cat`. Swap `-` for
-// `table:"body,truncate"` if you would rather clip it to the terminal width.
-type Page struct {
-	ID    string `json:"id" kit:"id" table:"id"`
-	URL   string `json:"url" table:"url,url"`
-	Title string `json:"title,omitempty" table:"title"`
-	Body  string `json:"body,omitempty" kit:"body" table:"-"`
+// challengeMarkers are byte signatures of a bot-manager interstitial served with
+// a 200 in place of the real page.
+var challengeMarkers = [][]byte{
+	[]byte("are you a robot"),
+	[]byte("are you human"),
+	[]byte("captcha-delivery.com"),
+	[]byte("px-captcha"),
+	[]byte("window._pxappid"),
+	[]byte("cf-challenge"),
+	[]byte("challenge-platform"),
 }
 
-// GetPage fetches one page by its path (for example "wiki/Go") and returns it as
-// a record. The scaffold keeps a plain-text preview of the response as the body;
-// replace the parsing with the real fields once you know the endpoint's shape.
-func (c *Client) GetPage(ctx context.Context, path string) (*Page, error) {
-	path = strings.Trim(path, "/")
-	url := BaseURL + "/" + path
-	body, err := c.Get(ctx, url)
-	if err != nil {
-		return nil, err
+// isChallenge reports whether a 200 body is a bot-manager challenge rather than a
+// real page, by looking for a known interstitial marker in the head of the body.
+func isChallenge(body []byte) bool {
+	head := body
+	if len(head) > 8192 {
+		head = head[:8192]
 	}
-	return &Page{ID: path, URL: url, Title: path, Body: pageText(body)}, nil
+	lower := bytes.ToLower(head)
+	for _, m := range challengeMarkers {
+		if bytes.Contains(lower, m) {
+			return true
+		}
+	}
+	return false
 }
 
-// PageLinks fetches a page and returns the same-host pages it links to, as page
-// stubs. It shows the member-listing pattern the URI driver relies on: every
-// stub carries enough (an id and a URL) to be addressed and followed on its own.
-func (c *Client) PageLinks(ctx context.Context, path string, limit int) ([]*Page, error) {
-	path = strings.Trim(path, "/")
-	body, err := c.Get(ctx, BaseURL+"/"+path)
-	if err != nil {
-		return nil, err
-	}
-	var out []*Page
-	seen := map[string]bool{}
-	for _, p := range linkPaths(body) {
-		if seen[p] {
-			continue
-		}
-		seen[p] = true
-		out = append(out, &Page{ID: p, URL: BaseURL + "/" + p})
-		if limit > 0 && len(out) >= limit {
-			break
-		}
-	}
-	return out, nil
-}
-
-// Search fetches the site's search results for query and returns the matching
-// pages as stubs, the same shape PageLinks emits, so every hit is an addressable
-// www.booking.com page URI a host can follow. Like the rest of the scaffold it is a
-// stand-in: it reads the links out of a results page rather than a real search
-// API. Point it at the real endpoint and parse the real result shape once you
-// know it.
-func (c *Client) Search(ctx context.Context, query string, limit int) ([]*Page, error) {
-	body, err := c.Get(ctx, BaseURL+"/search?q="+url.QueryEscape(query))
-	if err != nil {
-		return nil, err
-	}
-	var out []*Page
-	seen := map[string]bool{}
-	for _, p := range linkPaths(body) {
-		if seen[p] {
-			continue
-		}
-		seen[p] = true
-		out = append(out, &Page{ID: p, URL: BaseURL + "/" + p})
-		if limit > 0 && len(out) >= limit {
-			break
-		}
-	}
-	return out, nil
-}
-
-var (
-	hrefRE = regexp.MustCompile(`href="(/[^":#?]+)"`)
-	tagRE  = regexp.MustCompile(`<[^>]+>`)
-)
-
-// linkPaths pulls the relative link targets out of an HTML response, so a list
-// op can turn each into an addressable page stub.
-func linkPaths(body []byte) []string {
-	var out []string
-	for _, m := range hrefRE.FindAllSubmatch(body, -1) {
-		if p := strings.Trim(string(m[1]), "/"); p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
-// pageText reduces an HTML response to a short plain-text preview, a stand-in
-// for the typed extract a real endpoint would hand you.
-func pageText(body []byte) string {
-	s := strings.Join(strings.Fields(tagRE.ReplaceAllString(string(body), " ")), " ")
-	if len(s) > 500 {
-		s = s[:500]
-	}
-	return s
+// squish collapses internal whitespace and trims, for text pulled out of HTML.
+func squish(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }

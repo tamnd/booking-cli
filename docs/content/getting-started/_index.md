@@ -7,6 +7,6 @@ featured: true
 ---
 
 Three short pages: the [introduction](/getting-started/introduction/) for how
-booking is put together, [installation](/getting-started/installation/) to
-get the binary, and the [quick start](/getting-started/quick-start/) to run
-something real.
+booking is put together and the two reliability tiers it reads,
+[installation](/getting-started/installation/) to get the binary, and the
+[quick start](/getting-started/quick-start/) to run something real.

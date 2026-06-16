@@ -4,25 +4,39 @@ description: "Fetch your first record with booking."
 weight: 30
 ---
 
-Once `booking` is on your `PATH`, fetch a page. The argument is the path
-of the page on www.booking.com (everything after the host), or a full URL:
+Once `booking` is on your `PATH`, start on the reliable tier: the destination
+estate. These landing pages read from anywhere, so they are the best place to
+begin.
 
 ```bash
-booking page <path>
+booking destination country/us           # one node of the geographic tree
 ```
 
 By default you get an aligned table. Ask for JSON when you want to pipe it:
 
 ```bash
-$ booking page <path> -o json
+$ booking destination country/us -o json
 [
   {
-    "id": "<path>",
-    "url": "https://www.booking.com/<path>",
-    "title": "<path>",
-    "body": "..."
+    "id": "country/us",
+    "name": "United States",
+    "kind": "country",
+    "country": "us",
+    "property_count": 1234567,
+    "url": "https://www.booking.com/country/us.html"
   }
 ]
+```
+
+## Walk the destination estate
+
+A destination links down to its child nodes and across to the properties on its
+landing page. Each of these is reliable and reads from anywhere:
+
+```bash
+booking destinations country/us          # the country's child regions and cities
+booking properties city/us/orlando       # the hotels on a city landing page
+booking properties city/us/orlando -n 10 # the first ten
 ```
 
 ## Shape the output
@@ -30,9 +44,9 @@ $ booking page <path> -o json
 The same flags work on every command:
 
 ```bash
-booking page <path> --fields id,url        # keep only these columns
-booking page <path> --template '{{.Body}}' # just the body text
-booking page <path> -o jsonl | jq .url     # one object per line, into jq
+booking properties city/us/orlando --fields id,name,stars,rating
+booking property gb/the-savoy --template '{{.Name}} {{.City}}'
+booking destinations country/us -o jsonl | jq .id
 ```
 
 `-o` takes `table`, `markdown`, `list`, `json`, `jsonl`, `csv`, `tsv`, `url`, or
@@ -40,25 +54,39 @@ booking page <path> -o jsonl | jq .url     # one object per line, into jq
 the same command reads well by hand and parses cleanly downstream. See
 [output formats](/reference/output/) for the full contract.
 
-## Follow the links
+## The best-effort tier
 
-`links` lists the pages a page links to, and each one is a path you can fetch in
-turn:
+`property`, `reviews`, `search`, and `suggest` read the interactive client, which
+sits behind a bot manager. They work from a residential or mobile connection:
 
 ```bash
-booking links <path> -n 10                 # the first ten links
-booking links <path> -o url                # just the URLs
-booking links <path> -o url | head -3 | xargs -n1 booking page
+booking suggest orlando                  # autocomplete places and hotels
+booking property gb/the-savoy            # one property in full
+booking reviews gb/the-savoy             # that property's reviews
+booking search Orlando                   # search by free-text destination
 ```
 
-## Search for a page
+From a datacenter these can hit a wall that returns exit code 4. When that
+happens, read the destination estate instead, or retry from a residential or
+mobile connection. See [troubleshooting](/reference/troubleshooting/).
 
-`search` takes a free-text query and returns matching pages as stubs, each a path
-you can fetch in turn:
+## Fill a nightly price
+
+A price is filled only when you pass both `--checkin` and `--checkout`:
 
 ```bash
-booking search <query>                     # matching pages
-booking search <query> -n 5 -o url         # the first five, as URLs
+booking search Orlando --checkin 2026-07-01 --checkout 2026-07-04
+booking property gb/the-savoy --checkin 2026-07-01 --checkout 2026-07-04 \
+  --currency GBP --adults 2 --rooms 1
+```
+
+## Refer to anything
+
+`ref` classifies and builds Booking.com references offline, with no network:
+
+```bash
+booking ref id https://www.booking.com/hotel/gb/the-savoy.html  # to (kind, id)
+booking ref url property gb/the-savoy                           # to a URL
 ```
 
 ## Serve it instead
@@ -67,15 +95,13 @@ The same operations are available over HTTP and to agents over MCP:
 
 ```bash
 booking serve --addr :7777 &
-curl -s 'localhost:7777/v1/page/<path>'          # NDJSON, one record per line
-booking mcp                                # MCP over stdio: page, links, search
+curl -s 'localhost:7777/v1/property/gb/the-savoy'   # NDJSON, one record per line
+booking mcp                                         # MCP over stdio
 ```
 
-## What to build next
+## What to do next
 
-This scaffold ships one example type, `page`, wired end to end so the whole
-chain works today. To make it really about booking, model the records you
-care about in `booking/` and declare their operations in
-`booking/domain.go`. Each one you add shows up as a command here, a route
-under `serve`, and a tool under `mcp`, with no extra wiring. The
-[guides](/guides/) cover the common jobs.
+Follow the record graph: a suggestion fans into a search, a place, or a hotel; a
+search card walks through to the full property; a property reaches its reviews
+and the city it sits in; a destination climbs to its parent, descends to its
+children, and lists its properties. The [guides](/guides/) cover the common jobs.

@@ -25,9 +25,13 @@ func TestDomainInfo(t *testing.T) {
 
 func TestClassify(t *testing.T) {
 	cases := []struct{ in, typ, id string }{
-		{"wiki/Go", "page", "wiki/Go"},
-		{"/about/", "page", "about"},
-		{"https://" + Host + "/team/contact", "page", "team/contact"},
+		{"gb/the-savoy", "property", "gb/the-savoy"},
+		{"/hotel/gb/the-savoy.html", "property", "gb/the-savoy"},
+		{"https://" + Host + "/hotel/us/plaza.en-gb.html", "property", "us/plaza"},
+		{"https://" + Host + "/country/us.html", "destination", "country/us"},
+		{"/region/us/florida.html", "destination", "region/us/florida"},
+		{"https://" + Host + "/city/us/orlando.html", "destination", "city/us/orlando"},
+		{"https://" + Host + "/searchresults.html?ss=Orlando", "search", "Orlando"},
 	}
 	for _, tc := range cases {
 		typ, id, err := Domain{}.Classify(tc.in)
@@ -38,11 +42,25 @@ func TestClassify(t *testing.T) {
 	}
 }
 
+func TestClassifyUnknown(t *testing.T) {
+	if _, _, err := (Domain{}).Classify("not a booking reference at all"); err == nil {
+		t.Error("Classify of an unknown reference returned no error")
+	}
+}
+
 func TestLocate(t *testing.T) {
-	got, err := Domain{}.Locate("page", "wiki/Go")
-	want := "https://" + Host + "/wiki/Go"
-	if err != nil || got != want {
-		t.Errorf("Locate = (%q, %v), want (%q, nil)", got, err, want)
+	cases := []struct{ typ, id, want string }{
+		{"property", "gb/the-savoy", BaseURL + "/hotel/gb/the-savoy.html"},
+		{"reviews", "gb/the-savoy", BaseURL + "/hotel/gb/the-savoy.html"},
+		{"destination", "country/us", BaseURL + "/country/us.html"},
+		{"destination", "city/us/orlando", BaseURL + "/city/us/orlando.html"},
+		{"search", "Orlando", BaseURL + "/searchresults.html?ss=Orlando"},
+	}
+	for _, tc := range cases {
+		got, err := Domain{}.Locate(tc.typ, tc.id)
+		if err != nil || got != tc.want {
+			t.Errorf("Locate(%q,%q) = (%q, %v), want (%q, nil)", tc.typ, tc.id, got, err, tc.want)
+		}
 	}
 }
 
@@ -56,12 +74,17 @@ func TestHostWiring(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p := &Page{ID: "wiki/Go", URL: "https://" + Host + "/wiki/Go", Title: "Go", Body: "Go is a language."}
+	p := &Property{
+		ID:          "gb/the-savoy",
+		Name:        "The Savoy",
+		URL:         BaseURL + "/hotel/gb/the-savoy.html",
+		Description: "A hotel on the Strand.",
+	}
 	u, err := h.Mint(p)
 	if err != nil {
 		t.Fatalf("Mint: %v", err)
 	}
-	if want := "booking://page/wiki/Go"; u.String() != want {
+	if want := "booking://property/gb/the-savoy"; u.String() != want {
 		t.Errorf("Mint = %q, want %q", u.String(), want)
 	}
 
@@ -73,8 +96,8 @@ func TestHostWiring(t *testing.T) {
 		t.Error("Searchable = false, want true (the domain registers a search op)")
 	}
 
-	got, err := h.ResolveOn("booking", "about")
-	if err != nil || got.String() != "booking://page/about" {
-		t.Errorf("ResolveOn = (%q, %v), want booking://page/about", got.String(), err)
+	got, err := h.ResolveOn("booking", "gb/the-savoy")
+	if err != nil || got.String() != "booking://property/gb/the-savoy" {
+		t.Errorf("ResolveOn = (%q, %v), want booking://property/gb/the-savoy", got.String(), err)
 	}
 }
