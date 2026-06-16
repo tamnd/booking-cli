@@ -12,6 +12,7 @@ records, and gets out of your way. There is no API key. Every surface is
 anonymous.
 
 ```bash
+booking sitemap country                  # every country page, the crawl root
 booking suggest orlando                  # autocomplete places and hotels
 booking destination country/us           # one node of the geographic tree
 booking properties city/us/orlando       # the hotels on a city landing page
@@ -30,7 +31,8 @@ website has two tiers, and `booking` tells you which is which.
 - **The destination estate** is the country, region, city, district, landmark,
   and airport landing pages. These exist to be crawled and read from anywhere.
   They are the reliable backbone and the home of `destination`, `destinations`,
-  and `properties`.
+  `properties`, and `sitemap`, which reads Booking's own sitemaps as the crawl
+  root.
 - **The interactive client** is the property page, `reviews`, `search`, and
   `suggest`. These sit behind a bot manager. They work from a residential or
   mobile connection, and are best-effort from a datacenter, where a wall returns

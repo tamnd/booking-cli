@@ -26,13 +26,23 @@ can hit a bot wall (exit code 4) from a datacenter.
 | `destinations <ref>` | reliable | List a destination's child nodes. Emits Destination records |
 | `properties <ref>` | reliable | List the properties on a destination landing page. Emits Property records |
 | `suggest <prefix>` | best-effort | Autocomplete destinations and properties for a prefix. Emits Suggestion records |
+| `sitemap <kind>` | reliable | Enumerate a kind's landing pages from Booking's sitemaps. Emits Seed records, the crawl root |
 | `ref id <ref>` | offline | Classify any Booking.com URL, path, or id into its (kind, id). Emits a Ref |
 | `ref url <kind> <id>` | offline | Build the canonical URL for a (kind, id). Emits a Ref |
 | `serve [--addr]` | | Serve the operations over HTTP as NDJSON |
 | `mcp` | | Run as an MCP server over stdio |
 | `version` | | Print the version and exit |
 
-For `ref url`, `kind` is `property`, `destination`, or `search`.
+For `ref url`, `kind` is `property`, `destination`, `search`, or `sitemap`.
+
+For `sitemap`, `kind` is one of `country`, `region`, `city`, `district`,
+`landmark`, `airport`, or `hotel`. Booking publishes a per-kind sitemap index that
+lists per-language shards, and each shard enumerates every landing page of that
+kind. `sitemap` walks the index, reads the shards for `--locale`, and emits a
+Seed per page. Each Seed carries the edge into the rest of the graph: a place seed
+fills `destination`, a hotel seed fills `property`. Because a Seed needs no prior
+id, a crawl can start from `sitemap` alone, fan into every destination and
+property, and then follow the record links to reach the rest of the public site.
 
 ## Reference forms
 

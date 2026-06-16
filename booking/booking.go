@@ -104,6 +104,11 @@ func (c *Client) do(ctx context.Context, rawURL string) (body []byte, retry bool
 	switch {
 	case resp.StatusCode == http.StatusForbidden:
 		return nil, false, ErrBlocked
+	case resp.StatusCode == http.StatusAccepted:
+		// The bot manager on the interactive tier answers a challenged request
+		// with 202 and an interstitial body in place of the real page, so a 202 is
+		// the wall, not a partial success.
+		return nil, false, ErrBlocked
 	case resp.StatusCode == http.StatusNotFound:
 		return nil, false, ErrNotFound
 	case resp.StatusCode == http.StatusTooManyRequests:

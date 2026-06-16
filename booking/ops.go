@@ -126,6 +126,22 @@ func suggest(ctx context.Context, in prefixIn, emit func(*Suggestion) error) err
 	return emitAll(ss, emit)
 }
 
+// --- sitemap (the crawl root) ---
+
+type sitemapIn struct {
+	Kind   string  `kit:"arg" help:"country, region, city, district, landmark, airport, or hotel"`
+	Limit  int     `kit:"flag,inherit"`
+	Client *Client `kit:"inject"`
+}
+
+func sitemap(ctx context.Context, in sitemapIn, emit func(*Seed) error) error {
+	seeds, err := in.Client.Sitemap(ctx, in.Kind, limitOr(in.Limit, defaultLimit))
+	if err != nil {
+		return mapErr(err)
+	}
+	return emitAll(seeds, emit)
+}
+
 // --- reference tools (offline) ---
 
 type refIn struct {

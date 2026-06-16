@@ -27,15 +27,16 @@ func (c *Client) Reviews(ctx context.Context, ref string, limit int) ([]*Review,
 	}
 	var out []*Review
 	for i, r := range doc.Review {
-		text := squish(r.ReviewBody)
+		// The island carries a single combined body, not Booking's liked/disliked
+		// split, so it fills Text and is left out of Positive and Negative rather
+		// than labeled as praise it may not be.
 		rv := &Review{
 			ID:       id + ":" + strconv.Itoa(i+1),
 			Author:   squish(r.Author.Name),
 			Title:    squish(r.Name),
 			Date:     squish(r.DatePublished),
 			Score:    r.ReviewRating.RatingValue.float(),
-			Positive: text,
-			Text:     text,
+			Text:     squish(r.ReviewBody),
 			Language: squish(r.InLanguage),
 			Property: id,
 		}

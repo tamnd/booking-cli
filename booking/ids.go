@@ -44,6 +44,16 @@ func Classify(input string) Ref {
 	}
 	path = strings.Trim(path, "/")
 
+	// /sitembk-<kind>-index.xml, the per-kind sitemap index
+	if strings.HasPrefix(path, "sitembk-") && strings.HasSuffix(path, "-index.xml") {
+		kind := strings.TrimSuffix(strings.TrimPrefix(path, "sitembk-"), "-index.xml")
+		if sitemapKinds[kind] {
+			r.Kind, r.ID = "sitemap", kind
+			r.URL = URLFor(r.Kind, r.ID)
+		}
+		return r
+	}
+
 	// /searchresults.html?ss=<term>
 	if strings.HasPrefix(path, "searchresults") {
 		if query != nil {
@@ -114,6 +124,12 @@ func URLFor(kind, id string) string {
 		return BaseURL + "/" + id + ".html"
 	case "search":
 		return BaseURL + "/searchresults.html?ss=" + url.QueryEscape(id)
+	case "sitemap":
+		// id is the kind, e.g. "country"; the index lists the per-language shards.
+		if id == "" {
+			return ""
+		}
+		return BaseURL + "/sitembk-" + id + "-index.xml"
 	default:
 		return ""
 	}

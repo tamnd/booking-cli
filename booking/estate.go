@@ -2,6 +2,7 @@ package booking
 
 import (
 	"context"
+	"encoding/json"
 	"regexp"
 	"strconv"
 	"strings"
@@ -45,18 +46,23 @@ func (c *Client) GetDestination(ctx context.Context, ref string) (*Destination, 
 		ChildrenRef:   id,
 		PropertiesRef: id,
 	}
+	d.Lat, d.Lng = landingGeo(body, slug)
 	d.SearchRef = d.Name
 	d.ParentRef = parentRef(body, kind, cc)
 	return d, nil
 }
 
-// ListChildren returns the child destination nodes linked from a landing page.
+// ListChildren returns the destination nodes linked from a landing page. A
+// country page links down to its regions and cities and also across to peer
+// countries, so this returns both: the extra peer edges are what let a crawl
+// reach every country from any one of them. Each node's ParentRef is set by its
+// own place in the tree rather than to this page, so a peer country is not given a
+// false parent.
 func (c *Client) ListChildren(ctx context.Context, ref string, limit int) ([]*Destination, error) {
-	_, _, _, ok := parseDestRef(ref)
+	selfKind, selfCC, selfSlug, ok := parseDestRef(ref)
 	if !ok {
 		return nil, ErrUsage
 	}
-	selfKind, selfCC, selfSlug, _ := parseDestRef(ref)
 	selfID := destID(selfKind, selfCC, selfSlug)
 	body, err := c.get(ctx, URLFor("destination", selfID))
 	if err != nil {
@@ -82,7 +88,7 @@ func (c *Client) ListChildren(ctx context.Context, ref string, limit int) ([]*De
 			Name:          name,
 			PropertyCount: numFrom(anchorText(a[2])),
 			URL:           URLFor("destination", r.ID),
-			ParentRef:     selfID,
+			ParentRef:     structuralParent(kind, cc, selfID),
 			ChildrenRef:   r.ID,
 			PropertiesRef: r.ID,
 			SearchRef:     name,
@@ -93,6 +99,27 @@ func (c *Client) ListChildren(ctx context.Context, ref string, limit int) ([]*De
 		}
 	}
 	return out, nil
+}
+
+// structuralParent returns the parent id a child node should carry given its own
+// kind, rather than assuming the page it was found on is its parent. A region's
+// parent is its country, a city's is its country, and a deeper node defaults to
+// the page it came from when that page is a plausible ancestor. A country has no
+// parent.
+func structuralParent(childKind, childCC, fromID string) string {
+	switch childKind {
+	case "country":
+		return ""
+	case "region", "city":
+		return "country/" + childCC
+	case "district", "landmark", "airport":
+		if fromKind, _, _, ok := splitDestID(fromID); ok && fromKind == "city" {
+			return fromID
+		}
+		return "country/" + childCC
+	default:
+		return "country/" + childCC
+	}
 }
 
 // ListProperties returns the property cards linked from a landing page.
@@ -106,29 +133,68 @@ func (c *Client) ListProperties(ctx context.Context, ref string, limit int) ([]*
 	if err != nil {
 		return nil, err
 	}
-	var out []*Property
-	seen := map[string]bool{}
-	for _, a := range anchorRE.FindAllSubmatch(body, -1) {
-		r := Classify(string(a[1]))
-		if r.Kind != "property" || seen[r.ID] {
-			continue
-		}
-		seen[r.ID] = true
-		p := &Property{
-			ID:         r.ID,
-			Name:       anchorText(a[2]),
-			URL:        URLFor("property", r.ID),
-			ReviewsRef: r.ID,
-		}
-		if kind == "city" || kind == "district" {
+	cards := propertyCards(body)
+	if kind == "city" || kind == "district" {
+		for _, p := range cards {
 			p.DestinationRef = selfID
 		}
-		out = append(out, p)
-		if limit > 0 && len(out) >= limit {
-			break
+	}
+	return limitCards(cards, limit), nil
+}
+
+// imgSrcRE pulls the source from a card's <img>, accepting the lazy-load
+// data-src as well as src, since Booking defers the real image to data-src.
+var imgSrcRE = regexp.MustCompile(`(?is)<img\b[^>]*?\b(?:data-src|src)="([^"]+)"`)
+
+// propertyCards returns the property cards on a results or landing page, deduped
+// by id and in page order. Booking renders each card as two anchors to the same
+// /hotel/ link: one wraps the thumbnail image, the other the name. This merges
+// them by id so a card carries both the name and the thumbnail.
+func propertyCards(body []byte) []*Property {
+	var out []*Property
+	idx := map[string]*Property{}
+	for _, a := range anchorRE.FindAllSubmatch(body, -1) {
+		r := Classify(string(a[1]))
+		if r.Kind != "property" {
+			continue
+		}
+		p := idx[r.ID]
+		if p == nil {
+			p = &Property{ID: r.ID, URL: URLFor("property", r.ID), ReviewsRef: r.ID}
+			idx[r.ID] = p
+			out = append(out, p)
+		}
+		if p.Name == "" {
+			if name := anchorText(a[2]); name != "" {
+				p.Name = name
+			}
+		}
+		if p.Image == "" {
+			if img := cardImage(a[2]); img != "" {
+				p.Image = img
+			}
 		}
 	}
-	return out, nil
+	return out
+}
+
+// cardImage returns the first hotel thumbnail in a card anchor's inner HTML.
+func cardImage(inner []byte) string {
+	for _, m := range imgSrcRE.FindAllSubmatch(inner, -1) {
+		src := squish(string(m[1]))
+		if strings.Contains(src, "/images/hotel/") || strings.Contains(src, "bstatic.com") {
+			return src
+		}
+	}
+	return ""
+}
+
+// limitCards trims a card slice to limit, keeping all when limit is zero.
+func limitCards(cards []*Property, limit int) []*Property {
+	if limit > 0 && len(cards) > limit {
+		return cards[:limit]
+	}
+	return cards
 }
 
 // parseDestRef resolves a destination reference (a URL or a bare
@@ -193,6 +259,70 @@ func firstDestLink(body []byte, kind, cc string) string {
 		return kind + "/" + cc + "/" + string(m[1])
 	}
 	return ""
+}
+
+// landingGeo reads the node's coordinates from a JSON-LD object on the landing
+// page. City pages carry a City object with a geo block, and some place pages a
+// Place object, so this walks the islands for an object that has geo, preferring
+// one whose @id names the page's slug, then a City, then any. It returns zeroes
+// when the page carries none, which is the common case for country and region
+// pages.
+func landingGeo(body []byte, slug string) (lat, lng float64) {
+	type best struct {
+		lat, lng float64
+		score    int
+	}
+	var pick best
+	var walk func(node any)
+	walk = func(node any) {
+		switch n := node.(type) {
+		case map[string]any:
+			if g, ok := n["geo"].(map[string]any); ok {
+				la, okLa := geoNum(g["latitude"])
+				ln, okLn := geoNum(g["longitude"])
+				if okLa && okLn {
+					score := 1
+					if t, _ := n["@type"].(string); strings.EqualFold(t, "City") {
+						score = 2
+					}
+					if id, _ := n["@id"].(string); slug != "" && strings.Contains(strings.ToLower(id), strings.ToLower(slug)) {
+						score = 3
+					}
+					if score > pick.score {
+						pick = best{la, ln, score}
+					}
+				}
+			}
+			for _, v := range n {
+				walk(v)
+			}
+		case []any:
+			for _, v := range n {
+				walk(v)
+			}
+		}
+	}
+	for _, raw := range ldBlocks(body) {
+		var doc any
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			continue
+		}
+		walk(doc)
+	}
+	return pick.lat, pick.lng
+}
+
+// geoNum reads a coordinate that JSON-LD encodes as a number or a quoted number.
+func geoNum(v any) (float64, bool) {
+	switch x := v.(type) {
+	case float64:
+		return x, true
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(x), 64)
+		return f, err == nil
+	default:
+		return 0, false
+	}
 }
 
 // destName reads the node's display name from the page heading or title, falling

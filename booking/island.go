@@ -74,6 +74,12 @@ func parsePropertyIsland(body []byte, id, pageURL string) *Property {
 		Stars:       doc.StarRating.RatingValue.int(),
 		Type:        accommodationType(string(doc.Type)),
 		Photos:      doc.Image,
+		PriceRange:  squish(doc.PriceRange),
+		Phone:       squish(doc.Telephone),
+		Map:         doc.HasMap.string(),
+		CheckIn:     squish(doc.CheckinTime),
+		CheckOut:    squish(doc.CheckoutTime),
+		Amenities:   amenityNames(doc.AmenityFeature),
 		URL:         pageURL,
 		ReviewsRef:  id,
 	}
@@ -121,6 +127,22 @@ func accommodationType(t string) string {
 	default:
 		return strings.ToLower(t)
 	}
+}
+
+// amenityNames returns the names of the amenities the island marks as available,
+// deduped and in island order, dropping any with a falsey value.
+func amenityNames(feats []ldFeature) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, f := range feats {
+		name := squish(f.Name)
+		if name == "" || !f.Value.truthy() || seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, name)
+	}
+	return out
 }
 
 // compact drops empty strings from a slice.

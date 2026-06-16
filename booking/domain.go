@@ -122,6 +122,13 @@ func (Domain) Register(app *kit.App) {
 		Args:    []kit.Arg{{Name: "prefix", Help: "the typed prefix"}},
 	}, suggest)
 
+	kit.Handle(app, kit.OpMeta{
+		Name: "sitemap", Group: "read", List: true,
+		Summary: "Enumerate a kind's landing pages from Booking's sitemaps (the crawl root)",
+		URIType: "sitemap",
+		Args:    []kit.Arg{{Name: "kind", Help: "country, region, city, district, landmark, airport, or hotel"}},
+	}, sitemap)
+
 	// Reference tools (offline).
 	kit.Handle(app, kit.OpMeta{
 		Name: "id", Parent: "ref", Single: true,

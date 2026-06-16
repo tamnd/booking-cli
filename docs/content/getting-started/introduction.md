@@ -18,8 +18,10 @@ website has two tiers, and booking is honest about which is which.
 
 - **The destination estate** is the country, region, city, district, landmark,
   and airport landing pages. These exist to be crawled and read from anywhere.
-  They are the reliable backbone and host the `destination`, `destinations`, and
-  `properties` commands.
+  They are the reliable backbone and host the `destination`, `destinations`,
+  `properties`, and `sitemap` commands. `sitemap` reads Booking's own published
+  sitemaps and is the crawl root: it enumerates every landing page of a kind with
+  no prior id.
 - **The interactive client** is the property page, `reviews`, `search`, and
   `suggest`. These sit behind a bot manager. They work from a residential or
   mobile connection, and are best-effort from a datacenter, where a wall returns
@@ -32,7 +34,7 @@ It is never invented.
 ## How it is built
 
 - A **library package** (`booking`) holds the HTTP client and the typed data
-  models (Property, Review, Destination, Suggestion, Ref). It paces requests,
+  models (Property, Review, Destination, Suggestion, Seed, Ref). It paces requests,
   sets an honest User-Agent, and retries the transient failures any public site
   throws under load.
 - A **domain** (`booking/domain.go`) declares each operation once on the
