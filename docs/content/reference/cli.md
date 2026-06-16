@@ -8,22 +8,42 @@ weight: 10
 booking <command> [arguments] [flags]
 ```
 
-Run `booking <command> --help` for the full flag list on any command. This
-page is the map; keep it in step with the real command tree as you add to it.
+Run `booking <command> --help` for the full flag list on any command. This page
+is the map.
 
 ## Commands
 
-| Command | What it does |
-|---|---|
-| `page <ref>` | Fetch a page by path or URL |
-| `links <ref>` | List the pages a page links to |
-| `search <query>` | Search booking |
-| `serve [--addr]` | Serve the operations over HTTP as NDJSON |
-| `mcp` | Run as an MCP server over stdio |
-| `version` | Print the version and exit |
+The read commands split across the two reliability tiers. The destination estate
+is reliable and reads from anywhere. The interactive client is best-effort and
+can hit a bot wall (exit code 4) from a datacenter.
 
-`page`, `links`, and `search` are the example operations the scaffold ships. Add
-a row here per operation you declare in `booking/domain.go`.
+| Command | Tier | What it does |
+|---|---|---|
+| `search <destination>` | best-effort | Search properties by free-text destination. Emits Property cards |
+| `property <ref>` | best-effort | Show one property by id or `/hotel/` URL. Emits one Property |
+| `reviews <ref>` | best-effort | List a property's reviews. Emits Review records |
+| `destination <ref>` | reliable | Show one destination node. Emits one Destination |
+| `destinations <ref>` | reliable | List a destination's child nodes. Emits Destination records |
+| `properties <ref>` | reliable | List the properties on a destination landing page. Emits Property records |
+| `suggest <prefix>` | best-effort | Autocomplete destinations and properties for a prefix. Emits Suggestion records |
+| `ref id <ref>` | offline | Classify any Booking.com URL, path, or id into its (kind, id). Emits a Ref |
+| `ref url <kind> <id>` | offline | Build the canonical URL for a (kind, id). Emits a Ref |
+| `serve [--addr]` | | Serve the operations over HTTP as NDJSON |
+| `mcp` | | Run as an MCP server over stdio |
+| `version` | | Print the version and exit |
+
+For `ref url`, `kind` is `property`, `destination`, or `search`.
+
+## Reference forms
+
+The commands accept these reference forms:
+
+- **Property id**: `<cc>/<slug>`, for example `gb/the-savoy`, or a
+  `/hotel/<cc>/<slug>.html` URL (an optional `.<locale>` may sit before `.html`).
+- **Destination ref**: `<kind>/<cc>[/<slug>]`, for example `country/us`,
+  `region/us/florida`, `city/us/orlando`, `district/gb/soho-london`, or the
+  landing-page URL.
+- **Search**: the free-text term, or a `/searchresults.html?ss=<term>` URL.
 
 ## Global flags
 
@@ -45,6 +65,23 @@ These are shared by every operation, so they work the same on every command.
 | `-v, --verbose` | Increase verbosity (repeatable) |
 | `-q, --quiet` | Suppress progress output |
 | `--color` | `auto`, `always`, or `never` |
+
+## Booking-specific flags
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--user-agent` | `booking-cli/0.1 (+https://github.com/tamnd/booking-cli)` | The User-Agent sent on every request |
+| `--locale` | `en-us` | The Booking.com locale |
+| `--currency` | `USD` | The currency for prices |
+| `--checkin` | (none) | Check-in date, `YYYY-MM-DD` |
+| `--checkout` | (none) | Check-out date, `YYYY-MM-DD` |
+| `--adults` | `2` | Number of adults |
+| `--children` | `0` | Number of children |
+| `--rooms` | `1` | Number of rooms |
+| `--cache-ttl` | `24h0m0s` | How long a cached response stays fresh |
+| `--refresh` | | Fetch fresh and rewrite the cache, ignoring any hit |
+
+A nightly price is filled only when both `--checkin` and `--checkout` are passed.
 
 See [output formats](/reference/output/) for what `-o`, `--fields`, and
 `--template` produce, and [configuration](/reference/configuration/) for

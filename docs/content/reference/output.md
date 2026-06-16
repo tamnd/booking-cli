@@ -4,10 +4,33 @@ description: "The output contract every command shares: formats, fields, and tem
 weight: 30
 ---
 
-Every list command in the fleet renders through one formatter, so the same flags
-work everywhere. Wire your commands through it as you add them, and this page
-describes what users get. Pick a format with `-o`, or let booking choose:
-a table when writing to a terminal, JSONL when piped.
+Every command renders through one formatter, so the same flags work everywhere.
+Pick a format with `-o`, or let booking choose: a table when writing to a
+terminal, JSONL when piped.
+
+## Record types
+
+The read commands emit five record types. Each renders through the same formatter,
+so the flags below apply to all of them.
+
+- **Property** (`search`, `property`, `properties`): `id` (`<cc>/<slug>`), `name`,
+  `type` (hotel, apartment, hostel, resort, villa, guesthouse, bnb), `stars`
+  (1-5), `rating` (0-10 review score), `review_count`, `review_word`, `price`
+  (nightly, only with dates), `total`, `currency`, `street`, `city`, `region`,
+  `zip`, `country`, `display_address[]`, `lat`, `lng`, `check_in`, `check_out`,
+  `description`, `amenities[]`, `image`, `photos[]`, `url`, `reviews_ref`,
+  `destination_ref`.
+- **Review** (`reviews`): `id`, `author`, `country`, `score` (0-10), `date`,
+  `title`, `positive`, `negative`, `text`, `room_type`, `nights`,
+  `traveler_type`, `language`, `property`.
+- **Destination** (`destination`, `destinations`): `id`
+  (`<kind>/<cc>[/<slug>]`), `name`, `kind`, `country`, `region`,
+  `property_count`, `lat`, `lng`, `url`, `parent_ref`, `children_ref`,
+  `properties_ref`, `search_ref`.
+- **Suggestion** (`suggest`): `query`, `text`, `kind`, `country`,
+  `property_count`, `dest_id`, `dest_type`, `lat`, `lng`, `search_ref`,
+  `destination`, `property`.
+- **Ref** (`ref id`, `ref url`): `input`, `kind`, `id`, `url`.
 
 ## Formats
 
@@ -50,7 +73,7 @@ into a file.
 Keep only the fields you want:
 
 ```bash
-booking <command> --fields id,title,url
+booking properties city/us/orlando --fields id,name,stars,rating,price
 ```
 
 `--no-header` drops the header row in `table` and `csv` output, which helps when
@@ -62,7 +85,7 @@ For full control over each line, apply a Go text/template. Fields are the JSON
 keys, capitalised:
 
 ```bash
-booking <command> --template '{{.URL}} {{.Title}}'
+booking properties city/us/orlando --template '{{.Name}} {{.Stars}}* {{.Rating}}'
 ```
 
 ## Why auto-detection helps
@@ -71,8 +94,8 @@ Because the default adapts to the destination, the same command reads well by
 hand and parses cleanly in a pipe:
 
 ```bash
-booking <command>            # a table, because this is a terminal
-booking <command> | wc -l    # JSONL, because this is a pipe
+booking destinations country/us            # a table, because this is a terminal
+booking destinations country/us | wc -l    # JSONL, because this is a pipe
 ```
 
 You only reach for `-o` when you want something other than that default.
