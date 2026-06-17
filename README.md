@@ -18,8 +18,8 @@ website has two tiers, and `booking` is honest about which is which:
 - **The destination estate** is the country, region, city, district, landmark, and
   airport landing pages. These exist to be crawled and read from anywhere. They are
   the reliable backbone and the home of `destination`, `destinations`,
-  `properties`, and `sitemap`, which reads Booking's own sitemaps as the crawl
-  root.
+  `properties`, `sitemaps`, and `sitemap`. `sitemaps` lists every index Booking
+  advertises in robots.txt and `sitemap` reads one, together the crawl root.
 - **The interactive client** is the property page, `reviews`, `search`, and
   `suggest`. These sit behind a bot manager. They work from a residential or mobile
   connection, and are best-effort from a datacenter, where a wall returns exit 4.
@@ -43,6 +43,7 @@ docker run --rm ghcr.io/tamnd/booking:latest --help
 ## Usage
 
 ```bash
+booking sitemaps                              # every sitemap index Booking advertises
 booking sitemap country                       # every country page, the crawl root
 booking suggest orlando                       # autocomplete places and hotels
 booking destination country/us                # one node of the geographic tree
@@ -61,12 +62,12 @@ Every command shares one output contract:
 output goes (a color-aware table on a terminal, JSONL in a pipe), so the same
 command reads well by hand and parses cleanly downstream.
 
-Records connect into one graph. A sitemap seed fans into a destination or a
-property; a suggestion fans into a search, a place, or a hotel; a search card
-walks through to the full property; a property reaches its reviews and the city it
-sits in; a destination climbs to its parent, descends to its children, and lists
-its properties. Starting from `sitemap`, which needs no prior id, a host can crawl
-the reachable public estate by following those edges.
+Records connect into one graph. A sitemap index points at its seeds; a seed fans
+into a destination or a property; a suggestion fans into a search, a place, or a
+hotel; a search card walks through to the full property; a property reaches its
+reviews and the city it sits in; a destination climbs to its parent, descends to
+its children, and lists its properties. Starting from `sitemaps`, which needs no
+prior id, a host can crawl the reachable public estate by following those edges.
 
 ## Serve it
 

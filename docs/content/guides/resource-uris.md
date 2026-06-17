@@ -38,6 +38,8 @@ A URI is `booking://<type>/<id>`. The id is the same reference each command take
 | `booking://destinations/country/us`      | a destination's child nodes                 |
 | `booking://properties/city/us/orlando`   | the hotels on a destination landing page    |
 | `booking://search/Orlando`               | a free-text destination search              |
+| `booking://sitemaps`                      | every sitemap index Booking advertises      |
+| `booking://sitemap/country`               | the country landing pages, the crawl root   |
 
 ```bash
 ant get booking://property/gb/the-savoy      # the property record
@@ -60,6 +62,9 @@ addressable record:
 - A **destination** climbs to its parent through `parent_ref`, descends to its
   children through `children_ref`, lists its hotels through `properties_ref`, and
   opens a search through `search_ref`.
+- A **sitemap index** points at its seeds through `seeds_ref`, and a **seed** fans
+  into a `destination` or a `property`. Because the indexes are listed in
+  robots.txt, a crawl can start from `booking://sitemaps` with no prior id.
 
 The geographic tree and the property graph connect through the city node, so a
 crawl from any seed reaches the reachable public estate.

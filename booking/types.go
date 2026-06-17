@@ -144,17 +144,33 @@ type Suggestion struct {
 // the reconstruction backbone: robots.txt advertises a per-kind index, each index
 // lists per-language url shards, and each shard enumerates every landing page of
 // that kind. A Seed names one such page (kind, id, url, lastmod) and carries the
-// edge into the rest of the graph: a place seed fills Destination, a hotel seed
-// fills Property. A crawl that walks the sitemaps and then follows those edges
-// reconstructs the reachable public estate from nothing, no prior knowledge of any
-// country or property required.
+// edge into the rest of the graph: a place seed fills Destination, a hotel or
+// hotel-review seed fills Property. A page outside the accommodations graph (an
+// attraction, beach, or themed list) still comes back as a Seed with the URL and
+// lastmod and no edge, so no page is dropped. A crawl that walks the sitemaps and
+// then follows those edges reconstructs the reachable public estate from nothing,
+// no prior knowledge of any country or property required.
 type Seed struct {
 	URL         string `json:"url" kit:"id"`                                                        // the live landing-page URL, the unique key
-	Kind        string `json:"kind,omitempty"`                                                      // country, region, city, district, landmark, airport, hotel
-	ID          string `json:"id,omitempty"`                                                        // the resolved id, "<cc>/<slug>" or "<kind>/<cc>[/<slug>]"
+	Kind        string `json:"kind,omitempty"`                                                      // the sitemap kind the seed came from, e.g. country, hotel, hotel-review, themed-city-ski
+	ID          string `json:"id,omitempty"`                                                        // the resolved id, "<cc>/<slug>" or "<kind>/<cc>[/<slug>]", empty for a page with no typed record
 	Lastmod     string `json:"lastmod,omitempty"`                                                   // the sitemap's last-modified date, when present
 	Destination string `json:"destination,omitempty" table:"-" kit:"link,kind=booking/destination"` // a place seed
-	Property    string `json:"property,omitempty" table:"-" kit:"link,kind=booking/property"`       // a hotel seed
+	Property    string `json:"property,omitempty" table:"-" kit:"link,kind=booking/property"`       // a hotel or hotel-review seed
+}
+
+// SitemapIndex is one published sitemap index, emitted by sitemaps. Booking lists
+// every index in robots.txt, and this is the root of the whole backbone: each
+// record names the index URL, the kind it enumerates, and the category of page it
+// covers. SeedsRef links into the sitemap operation for that kind, so a crawl
+// walks from here into every backbone the site publishes and on into the records.
+// The few language master indexes that do not fit the per-kind template carry the
+// URL only, with no Kind or SeedsRef.
+type SitemapIndex struct {
+	URL      string `json:"url" kit:"id"`                                                  // the index URL, the unique key
+	Kind     string `json:"kind,omitempty"`                                                // the sitemap kind, e.g. "country", "hotel-review", "themed-city-ski"
+	Category string `json:"category,omitempty"`                                            // place, property, reviews, attraction, beach, theme, car, flight, article, other
+	SeedsRef string `json:"seeds_ref,omitempty" table:"-" kit:"link,kind=booking/sitemap"` // = Kind, the seeds in this index
 }
 
 // Ref is the result of `booking ref id`: the canonical (kind, id) a reference

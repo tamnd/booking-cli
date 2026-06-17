@@ -19,9 +19,10 @@ website has two tiers, and booking is honest about which is which.
 - **The destination estate** is the country, region, city, district, landmark,
   and airport landing pages. These exist to be crawled and read from anywhere.
   They are the reliable backbone and host the `destination`, `destinations`,
-  `properties`, and `sitemap` commands. `sitemap` reads Booking's own published
-  sitemaps and is the crawl root: it enumerates every landing page of a kind with
-  no prior id.
+  `properties`, `sitemaps`, and `sitemap` commands. `sitemaps` lists every sitemap
+  index Booking advertises in robots.txt, a few hundred of them, and `sitemap`
+  reads one and enumerates every landing page of that kind with no prior id. They
+  are the crawl root.
 - **The interactive client** is the property page, `reviews`, `search`, and
   `suggest`. These sit behind a bot manager. They work from a residential or
   mobile connection, and are best-effort from a datacenter, where a wall returns

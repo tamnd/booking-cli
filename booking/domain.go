@@ -123,10 +123,16 @@ func (Domain) Register(app *kit.App) {
 	}, suggest)
 
 	kit.Handle(app, kit.OpMeta{
+		Name: "sitemaps", Group: "read", List: true,
+		Summary: "List the sitemap indexes Booking advertises in robots.txt (discovers every crawl backbone)",
+		URIType: "sitemaps",
+	}, sitemaps)
+
+	kit.Handle(app, kit.OpMeta{
 		Name: "sitemap", Group: "read", List: true,
 		Summary: "Enumerate a kind's landing pages from Booking's sitemaps (the crawl root)",
 		URIType: "sitemap",
-		Args:    []kit.Arg{{Name: "kind", Help: "country, region, city, district, landmark, airport, or hotel"}},
+		Args:    []kit.Arg{{Name: "kind", Help: "a sitemap kind, e.g. country or hotel; run sitemaps to list them all"}},
 	}, sitemap)
 
 	// Reference tools (offline).

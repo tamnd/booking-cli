@@ -39,21 +39,33 @@ booking properties city/us/orlando       # the hotels on a city landing page
 booking properties city/us/orlando -n 10 # the first ten
 ```
 
-## Start a crawl from the sitemap
+## Start a crawl from the sitemaps
 
-`sitemap` reads Booking's own published sitemaps and is the crawl root: it lists
-every landing page of a kind with no prior id, so you do not need to know a single
+`sitemaps` reads robots.txt, Booking's master list, and prints every sitemap index
+the site advertises, a few hundred of them. It is the root of the crawl: you
+discover the backbones rather than guessing their names.
+
+```bash
+booking sitemaps                         # every advertised index
+booking sitemaps -o jsonl | jq -r 'select(.category=="place") | .kind'
+```
+
+`sitemap` then reads one index and is the crawl root proper: it lists every
+landing page of a kind with no prior id, so you do not need to know a single
 country or hotel to begin. Each row is a Seed that points into the rest of the
 graph.
 
 ```bash
 booking sitemap country                  # every country landing page
 booking sitemap hotel -n 50              # the first fifty hotel pages
+booking sitemap hotel-review -n 50       # the per-property review pages
 booking sitemap city -o jsonl | jq .destination
 ```
 
-A place seed fills `destination` and a hotel seed fills `property`, so you can
-walk straight from a seed into the full record and then follow its links.
+A place seed fills `destination` and a hotel or hotel-review seed fills
+`property`, so you can walk straight from a seed into the full record and then
+follow its links. A page outside the accommodations graph still comes back as a
+seed with its URL, so nothing is dropped from the inventory.
 
 ## Shape the output
 
@@ -117,9 +129,9 @@ booking mcp                                         # MCP over stdio
 
 ## What to do next
 
-Follow the record graph: a sitemap seed fans into a destination or a property; a
-suggestion fans into a search, a place, or a hotel; a search card walks through to
-the full property; a property reaches its reviews and the city it sits in; a
-destination climbs to its parent, descends to its children, and lists its
-properties. Starting from `sitemap` and following these links reaches the whole
-public estate. The [guides](/guides/) cover the common jobs.
+Follow the record graph: a sitemap index points at its seeds; a seed fans into a
+destination or a property; a suggestion fans into a search, a place, or a hotel; a
+search card walks through to the full property; a property reaches its reviews and
+the city it sits in; a destination climbs to its parent, descends to its children,
+and lists its properties. Starting from `sitemaps` and following these links
+reaches the whole public estate. The [guides](/guides/) cover the common jobs.

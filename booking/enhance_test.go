@@ -38,8 +38,128 @@ func TestSeedFor(t *testing.T) {
 	if hotel == nil || hotel.Property != "gb/the-savoy" || hotel.Destination != "" {
 		t.Errorf("hotel seed = %+v", hotel)
 	}
-	if bad := seedFor("city", "https://www.booking.com/some/other/path", ""); bad != nil {
-		t.Errorf("unrecognized URL should yield nil, got %+v", bad)
+	// A hotel-review page resolves to the property it reviews.
+	rev := seedFor("hotel-review", BaseURL+"/reviews/gb/hotel/the-savoy.en-gb.html", "")
+	if rev == nil || rev.Property != "gb/the-savoy" || rev.Destination != "" {
+		t.Errorf("review seed = %+v", rev)
+	}
+	// A page outside the accommodations graph still comes back, carrying the URL
+	// and lastmod with no edge, so the inventory stays complete.
+	other := seedFor("attractions", BaseURL+"/attractions/us/disney.html", "2026-02-02")
+	if other == nil {
+		t.Fatal("unrecognized URL should still yield a seed")
+	}
+	if other.Destination != "" || other.Property != "" {
+		t.Errorf("unrecognized seed should carry no edge, got %+v", other)
+	}
+	if other.URL != BaseURL+"/attractions/us/disney.html" || other.Lastmod != "2026-02-02" {
+		t.Errorf("unrecognized seed should keep url+lastmod, got %+v", other)
+	}
+}
+
+func TestReviewsPageClassify(t *testing.T) {
+	// The dedicated /reviews/<cc>/hotel/<slug> page resolves to its property.
+	r := Classify(BaseURL + "/reviews/gb/hotel/the-savoy.en-gb.html")
+	if r.Kind != "property" || r.ID != "gb/the-savoy" {
+		t.Errorf("Classify reviews page = (%q,%q), want (property,gb/the-savoy)", r.Kind, r.ID)
+	}
+}
+
+func TestSitemapsDiscovery(t *testing.T) {
+	robots := strings.Join([]string{
+		"User-agent: *",
+		"Disallow: /searchresults",
+		"Sitemap: https://www.booking.com/sitembk-country-index.xml",
+		"Sitemap: https://www.booking.com/sitembk-hotel-index.xml",
+		"Sitemap: https://www.booking.com/sitembk-hotel-review-index.xml",
+		"Sitemap: https://www.booking.com/sitembk-themed-city-ski-index.xml",
+		"Sitemap: https://www.booking.com/sitembk-attractions-index.xml",
+		"Sitemap: https://www.booking.com/sitemap.xml",
+		// A duplicate is dropped.
+		"Sitemap: https://www.booking.com/sitembk-country-index.xml",
+	}, "\n")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(robots))
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{NoCache: true})
+	c.HTTP = srv.Client()
+	idxs, err := c.sitemapsFrom(context.Background(), srv.URL, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(idxs) != 6 {
+		t.Fatalf("got %d indexes, want 6", len(idxs))
+	}
+	want := map[string]struct{ kind, category string }{
+		"https://www.booking.com/sitembk-country-index.xml":         {"country", "place"},
+		"https://www.booking.com/sitembk-hotel-index.xml":           {"hotel", "property"},
+		"https://www.booking.com/sitembk-hotel-review-index.xml":    {"hotel-review", "reviews"},
+		"https://www.booking.com/sitembk-themed-city-ski-index.xml": {"themed-city-ski", "theme"},
+		"https://www.booking.com/sitembk-attractions-index.xml":     {"attractions", "attraction"},
+		"https://www.booking.com/sitemap.xml":                       {"", ""},
+	}
+	for _, idx := range idxs {
+		w, ok := want[idx.URL]
+		if !ok {
+			t.Errorf("unexpected index %q", idx.URL)
+			continue
+		}
+		if idx.Kind != w.kind || idx.Category != w.category {
+			t.Errorf("index %q = (%q,%q), want (%q,%q)", idx.URL, idx.Kind, idx.Category, w.kind, w.category)
+		}
+		if w.kind != "" && idx.SeedsRef != w.kind {
+			t.Errorf("index %q SeedsRef = %q, want %q", idx.URL, idx.SeedsRef, w.kind)
+		}
+	}
+}
+
+func TestIndexKind(t *testing.T) {
+	cases := map[string]string{
+		"https://www.booking.com/sitembk-country-index.xml":         "country",
+		"https://www.booking.com/sitembk-themed-city-ski-index.xml": "themed-city-ski",
+		"sitembk-hotel-review-index.xml":                            "hotel-review",
+		"https://www.booking.com/sitemap.xml":                       "",
+		"https://www.booking.com/sitembk--index.xml":                "",
+	}
+	for in, want := range cases {
+		if got := indexKind(in); got != want {
+			t.Errorf("indexKind(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestSitemapCategory(t *testing.T) {
+	cases := map[string]string{
+		"country":           "place",
+		"regiongroup":       "place",
+		"airport":           "place",
+		"hotel":             "property",
+		"hotel-review":      "reviews",
+		"attractions":       "attraction",
+		"beaches":           "beach",
+		"themed-city-ski":   "theme",
+		"cars":              "car",
+		"flights":           "flight",
+		"articles":          "article",
+		"something-unknown": "other",
+	}
+	for kind, want := range cases {
+		if got := sitemapCategory(kind); got != want {
+			t.Errorf("sitemapCategory(%q) = %q, want %q", kind, got, want)
+		}
+	}
+}
+
+func TestRobotsClassify(t *testing.T) {
+	// robots.txt is the master list, classified as sitemaps with no id.
+	r := Classify(BaseURL + "/robots.txt")
+	if r.Kind != "sitemaps" || r.ID != "" {
+		t.Errorf("Classify robots = (%q,%q), want (sitemaps,)", r.Kind, r.ID)
+	}
+	if URLFor("sitemaps", "") != BaseURL+"/robots.txt" {
+		t.Errorf("URLFor sitemaps = %q", URLFor("sitemaps", ""))
 	}
 }
 
