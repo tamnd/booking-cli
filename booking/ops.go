@@ -126,10 +126,25 @@ func suggest(ctx context.Context, in prefixIn, emit func(*Suggestion) error) err
 	return emitAll(ss, emit)
 }
 
+// --- sitemaps (the root of the crawl root) ---
+
+type sitemapsIn struct {
+	Limit  int     `kit:"flag,inherit"`
+	Client *Client `kit:"inject"`
+}
+
+func sitemaps(ctx context.Context, in sitemapsIn, emit func(*SitemapIndex) error) error {
+	idxs, err := in.Client.Sitemaps(ctx, limitOr(in.Limit, 0))
+	if err != nil {
+		return mapErr(err)
+	}
+	return emitAll(idxs, emit)
+}
+
 // --- sitemap (the crawl root) ---
 
 type sitemapIn struct {
-	Kind   string  `kit:"arg" help:"country, region, city, district, landmark, airport, or hotel"`
+	Kind   string  `kit:"arg" help:"a sitemap kind, e.g. country or hotel; run sitemaps to list them all"`
 	Limit  int     `kit:"flag,inherit"`
 	Client *Client `kit:"inject"`
 }

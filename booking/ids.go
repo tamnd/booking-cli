@@ -44,10 +44,17 @@ func Classify(input string) Ref {
 	}
 	path = strings.Trim(path, "/")
 
+	// robots.txt is the master list of every sitemap index.
+	if path == "robots.txt" {
+		r.Kind, r.ID = "sitemaps", ""
+		r.URL = URLFor(r.Kind, r.ID)
+		return r
+	}
+
 	// /sitembk-<kind>-index.xml, the per-kind sitemap index
 	if strings.HasPrefix(path, "sitembk-") && strings.HasSuffix(path, "-index.xml") {
 		kind := strings.TrimSuffix(strings.TrimPrefix(path, "sitembk-"), "-index.xml")
-		if sitemapKinds[kind] {
+		if kindRE.MatchString(kind) {
 			r.Kind, r.ID = "sitemap", kind
 			r.URL = URLFor(r.Kind, r.ID)
 		}
@@ -76,6 +83,14 @@ func Classify(input string) Ref {
 		// /hotel/<cc>/<slug>.<locale>.html
 		cc := segs[1]
 		slug := stripPageSuffix(segs[2])
+		if cc != "" && slug != "" {
+			r.Kind, r.ID = "property", cc+"/"+slug
+		}
+	case segs[0] == "reviews" && len(segs) >= 4 && segs[2] == "hotel":
+		// /reviews/<cc>/hotel/<slug>.<locale>.html, the property's reviews page,
+		// which resolves to the property it reviews.
+		cc := segs[1]
+		slug := stripPageSuffix(segs[3])
 		if cc != "" && slug != "" {
 			r.Kind, r.ID = "property", cc+"/"+slug
 		}
@@ -130,6 +145,9 @@ func URLFor(kind, id string) string {
 			return ""
 		}
 		return BaseURL + "/sitembk-" + id + "-index.xml"
+	case "sitemaps":
+		// robots.txt is the master list of every sitemap index; it takes no id.
+		return BaseURL + "/robots.txt"
 	default:
 		return ""
 	}

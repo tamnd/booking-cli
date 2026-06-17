@@ -26,6 +26,7 @@ can hit a bot wall (exit code 4) from a datacenter.
 | `destinations <ref>` | reliable | List a destination's child nodes. Emits Destination records |
 | `properties <ref>` | reliable | List the properties on a destination landing page. Emits Property records |
 | `suggest <prefix>` | best-effort | Autocomplete destinations and properties for a prefix. Emits Suggestion records |
+| `sitemaps` | reliable | List the sitemap indexes Booking advertises in robots.txt. Emits SitemapIndex records, the root of the crawl root |
 | `sitemap <kind>` | reliable | Enumerate a kind's landing pages from Booking's sitemaps. Emits Seed records, the crawl root |
 | `ref id <ref>` | offline | Classify any Booking.com URL, path, or id into its (kind, id). Emits a Ref |
 | `ref url <kind> <id>` | offline | Build the canonical URL for a (kind, id). Emits a Ref |
@@ -33,16 +34,29 @@ can hit a bot wall (exit code 4) from a datacenter.
 | `mcp` | | Run as an MCP server over stdio |
 | `version` | | Print the version and exit |
 
-For `ref url`, `kind` is `property`, `destination`, `search`, or `sitemap`.
+For `ref url`, `kind` is `property`, `destination`, `search`, `sitemap`, or
+`sitemaps`.
 
-For `sitemap`, `kind` is one of `country`, `region`, `city`, `district`,
-`landmark`, `airport`, or `hotel`. Booking publishes a per-kind sitemap index that
-lists per-language shards, and each shard enumerates every landing page of that
-kind. `sitemap` walks the index, reads the shards for `--locale`, and emits a
-Seed per page. Each Seed carries the edge into the rest of the graph: a place seed
-fills `destination`, a hotel seed fills `property`. Because a Seed needs no prior
-id, a crawl can start from `sitemap` alone, fan into every destination and
-property, and then follow the record links to reach the rest of the public site.
+`sitemaps` reads robots.txt, the master list, and emits one SitemapIndex per
+advertised index: the index URL, the kind it enumerates, and the category of page
+it covers (place, property, reviews, attraction, beach, theme, car, flight,
+article, other). Booking advertises a few hundred indexes, far more than the
+handful of accommodation kinds, so `sitemaps` is how you discover every backbone
+the site publishes rather than guessing names. Each record's `seeds_ref` is the
+kind to hand to `sitemap`.
+
+For `sitemap`, `kind` is any advertised kind, for example `country`, `hotel`,
+`hotel-review`, or `themed-city-ski`. Run `sitemaps` to list them all. Booking
+publishes a per-kind sitemap index that lists per-language shards, and each shard
+enumerates every landing page of that kind. `sitemap` walks the index, reads the
+shards for `--locale`, and emits a Seed per page. A Seed carries the edge into the
+rest of the graph when the page maps to a record: a place seed fills
+`destination`, a hotel or hotel-review seed fills `property`. A page outside the
+accommodations graph (an attraction, beach, or themed list) still comes back as a
+Seed with its URL and lastmod and no edge, so the inventory stays complete.
+Because a Seed needs no prior id, a crawl can start from `sitemaps`, walk each
+index into its seeds, and then follow the record links to reach the rest of the
+public site.
 
 ## Reference forms
 
